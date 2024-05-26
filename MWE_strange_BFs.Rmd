@@ -1,0 +1,461 @@
+---
+title: Large Bayes Factors, but Zero in CrI
+subtitle: Minimal Working Example
+output: html_document
+date: "`r Sys.Date()`"
+author: Michael Vrazitulis
+---
+
+In this document, I show the puzzling issue that I encountered when analyzing my master's thesis data.
+In short, there are large Bayes factors (up to $BF_{10} = 18.8$) in cases where the 95% CrI of the parameter of interest includes zero.
+
+For starters, let's load `ggplot2` and `brms`:
+
+```{r}
+library(ggplot2)
+library(brms)
+```
+
+Now we can load in the data set of interest. I've stripped it of anything but the columns necessary for downstream analysis.
+
+(If you don't have the TSV file at hand, here's a download link: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9YMcP87g5RcUY-dYg?e=6vb4Me>, 235.9 KiB)
+
+```{r}
+critical_results_SPV <- read.table(file = "critical_results_SPV.tsv", sep = "\t", header = TRUE)
+```
+
+How does this data look like? Let's find out.
+
+```{r}
+str(critical_results_SPV)
+summary(critical_results_SPV)
+```
+
+Clarifications:
+
+The **subject** column contains IDs of the particular subjects.
+
+The **item** column contains IDs of items. This experimental design has only four items.
+
+The **VR** column contains the Good/Bad response provided by the subject.  
+Here, Good is sum-coded as 0.412 and Bad is as --0.588.
+
+The **POL** column contains information on whether we are in positive- or negative-polarity condition.  
+Here, positive is sum-coded as 0.498 and negative as --0.502.
+
+Finally, the **res_log_RT** column contains our dependent variable of interest (residual log RT).  
+It was derived by first log-transforming raw RTs on the millisecond scale, then subtracting predicted log RTs produced by a model that had been fitted separately on control-condition trials.  
+(In hindsight, I realize that this type of residualization preprocessing is kind of cringe, but I didn't know that a year ago. Now it is what it is.)  
+
+As a sanity check, let's look at how the dependent variable is distributed (histogram):
+
+```{r}
+hist(critical_results_SPV$res_log_RT)
+```
+
+At this point, we are ready to fit some `brms` models.
+
+The hypothesis we want to test is that the interaction of VR (verification response) and POL (polarity) has a meaningful effect on residual log RTs. According to theory, we should expect a negative parameter value $\beta_{\mathtt{\,VR:POL}}$.
+
+(Disclaimer: In order to ensure convergence, I fitted each of the models with 40k iterations! That takes forever, though, so I have set the code blocks below where models are fitted to `eval=FALSE`. But I provide a download link of an .RData file for each of the fitted models. So, in case you want to reproduce any downstream analyses *after* models have been fitted, feel free to just download my fitted models and load them into your workspace.)  
+&nbsp;
+
+```{r eval=FALSE}
+## null model (no population-level VR:POL), for comparison using Bayes factors
+
+priors_null <-  c(
+  prior(normal(0, 1), class = Intercept), # 0 because residual log RT
+  prior(normal(0, 0.3), class = sigma),
+  prior(normal(0, 0.2), class = b, coef = VR),
+  prior(normal(0, 0.2), class = b, coef = POL),
+  prior(normal(0, 0.1), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+fit_null <- brm('res_log_RT ~ VR + POL + (VR * POL | subject) + (VR * POL | item)',
+                data = critical_results_SPV,
+                family = gaussian(),
+                prior = fit_null,
+                chains = 4,
+                cores = 12,
+                iter = 40000,
+                warmup = 8000,
+                control = list(adapt_delta = 0.95),
+                save_pars = save_pars(all = TRUE)
+)
+```
+
+Download link for `fit_null`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9YT6nAr7Y05C91zdA> (3.8 GiB)  
+&nbsp;
+
+```{r eval=FALSE}
+## target parameter with prior N(0, 1)
+
+priors_interest_prior_1 <- c(
+  prior(normal(0, 1), class = Intercept), # 0 because residual log RT
+  prior(normal(0, 0.3), class = sigma),
+  prior(normal(0, 0.2), class = b, coef = VR),
+  prior(normal(0, 0.2), class = b, coef = POL),
+  prior(normal(0, 1), class = b, coef = VR:POL), # target!
+  prior(normal(0, 0.1), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+fit_interest_prior_1 <- brm(res_log_RT ~ VR * POL + (VR * POL | subject) + (VR * POL | item),
+                            data = critical_results_SPV,
+                            family = gaussian(),
+                            prior = priors_interest_prior_1,
+                            chains = 4,
+                            cores = 12,
+                            iter = 40000,
+                            warmup = 8000,
+                            control = list(adapt_delta = .95),
+                            save_pars = save_pars(all = TRUE)
+)
+```
+
+Download link for `fit_interest_prior_1`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9YVZdXjZ4MsyceBqQ?e=zRs6AM> (3.8 GiB)  
+&nbsp;
+
+```{r eval=FALSE}
+## target parameter with prior N(0, 0.5)
+
+priors_interest_prior_0_5 <- c(
+  prior(normal(0, 1), class = Intercept), # 0 because residual log RT
+  prior(normal(0, 0.3), class = sigma),
+  prior(normal(0, 0.2), class = b, coef = VR),
+  prior(normal(0, 0.2), class = b, coef = POL),
+  prior(normal(0, 0.5), class = b, coef = VR:POL), # target!
+  prior(normal(0, 0.1), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+fit_interest_prior_0_5 <- brm(res_log_RT ~ VR * POL + (VR * POL | subject) + (VR * POL | item),
+                              data = critical_results_SPV,
+                              family = gaussian(),
+                              prior = priors_interest_prior_0_5,
+                              chains = 4,
+                              cores = 12,
+                              iter = 40000,
+                              warmup = 8000,
+                              control = list(adapt_delta = .95),
+                              save_pars = save_pars(all = TRUE)
+)
+```
+
+Download link for `fit_interest_prior_0_5`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9YQnHW07js2r_lXHQ?e=rYWPCT> (3.8 GiB)  
+&nbsp;
+
+```{r eval=FALSE}
+## target parameter with prior N(0, 0.2)
+
+priors_interest_prior_0_2 <- c(
+  prior(normal(0, 1), class = Intercept), # 0 because residual log RT
+  prior(normal(0, 0.3), class = sigma),
+  prior(normal(0, 0.2), class = b, coef = VR),
+  prior(normal(0, 0.2), class = b, coef = POL),
+  prior(normal(0, 0.2), class = b, coef = VR:POL), # target!
+  prior(normal(0, 0.1), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+fit_interest_prior_0_2 <- brm(res_log_RT ~ VR * POL + (VR * POL | subject) + (VR * POL | item),
+                              data = critical_results_SPV,
+                              family = gaussian(),
+                              prior = priors_interest_prior_0_2,
+                              chains = 4,
+                              cores = 12,
+                              iter = 40000,
+                              warmup = 8000,
+                              control = list(adapt_delta = .95),
+                              save_pars = save_pars(all = TRUE)
+)
+```
+
+Download link for `fit_interest_prior_0_2`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9YPn7AuIWpVbe-pLQ?e=tgbxkt> (3.8 GiB)  
+&nbsp;
+
+```{r eval=FALSE}
+## target parameter with prior N(0, 0.1)
+
+priors_interest_prior_0_1 <- c(
+  prior(normal(0, 1), class = Intercept), # 0 because residual log RT
+  prior(normal(0, 0.3), class = sigma),
+  prior(normal(0, 0.2), class = b, coef = VR),
+  prior(normal(0, 0.2), class = b, coef = POL),
+  prior(normal(0, 0.1), class = b, coef = VR:POL), # target!
+  prior(normal(0, 0.1), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+fit_interest_prior_0_1 <- brm(res_log_RT ~ VR * POL + (VR * POL | subject) + (VR * POL | item),
+                              data = critical_results_SPV,
+                              family = gaussian(),
+                              prior = priors_interest_prior_0_1,
+                              chains = 4,
+                              cores = 12,
+                              iter = 40000,
+                              warmup = 8000,
+                              control = list(adapt_delta = .95),
+                              save_pars = save_pars(all = TRUE)
+)
+```
+
+Download link for `fit_interest_prior_0_1`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9YSqygFgrJt9wD5rw?e=nxVJEr> (3.8 GiB)  
+&nbsp;
+
+```{r eval=FALSE}
+## target parameter with prior N(0, 0.05)
+
+priors_interest_prior_0_05 <- c(
+  prior(normal(0, 1), class = Intercept), # 0 because residual log RT
+  prior(normal(0, 0.3), class = sigma),
+  prior(normal(0, 0.2), class = b, coef = VR),
+  prior(normal(0, 0.2), class = b, coef = POL),
+  prior(normal(0, 0.05), class = b, coef = VR:POL), # target!
+  prior(normal(0, 0.1), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+fit_interest_prior_0_05 <- brm(res_log_RT ~ VR * POL + (VR * POL | subject) + (VR * POL | item),
+                               data = critical_results_SPV,
+                               family = gaussian(),
+                               prior = priors_interest_prior_0_05,
+                               chains = 4,
+                               cores = 12,
+                               iter = 40000,
+                               warmup = 8000,
+                               control = list(adapt_delta = .95),
+                               save_pars = save_pars(all = TRUE)
+)
+```
+
+Download link for `fit_interest_prior_0_05`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9YUMqrpeMfDth4otw?e=pOvwKQ> (3.8 GiB)  
+&nbsp;
+
+```{r eval=FALSE}
+## target parameter with prior N(0, 0.02)
+
+priors_interest_prior_0_02 <- c(
+  prior(normal(0, 1), class = Intercept), # 0 because residual log RT
+  prior(normal(0, 0.3), class = sigma),
+  prior(normal(0, 0.2), class = b, coef = VR),
+  prior(normal(0, 0.2), class = b, coef = POL),
+  prior(normal(0, 0.02), class = b, coef = VR:POL), # target!
+  prior(normal(0, 0.1), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+fit_interest_prior_0_02 <- brm(res_log_RT ~ VR * POL + (VR * POL | subject) + (VR * POL | item),
+                               data = critical_results_SPV,
+                               family = gaussian(),
+                               prior = priors_interest_prior_0_02,
+                               chains = 4,
+                               cores = 12,
+                               iter = 40000,
+                               warmup = 8000,
+                               control = list(adapt_delta = .95),
+                               save_pars = save_pars(all = TRUE)
+)
+```
+
+Download link for `fit_interest_prior_0_02`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9YWdPcqTiPKRiSiBA?e=y7GfNW> (3.8 GiB)  
+&nbsp;
+
+```{r eval=FALSE}
+## target parameter with prior N(0, 0.01)
+
+priors_interest_prior_0_01 <- c(
+  prior(normal(0, 1), class = Intercept), # 0 because residual log RT
+  prior(normal(0, 0.3), class = sigma),
+  prior(normal(0, 0.2), class = b, coef = VR),
+  prior(normal(0, 0.2), class = b, coef = POL),
+  prior(normal(0, 0.01), class = b, coef = VR:POL), # target!
+  prior(normal(0, 0.1), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+fit_interest_prior_0_01 <- brm(res_log_RT ~ VR * POL + (VR * POL | subject) + (VR * POL | item),
+                               data = critical_results_SPV,
+                               family = gaussian(),
+                               prior = priors_interest_prior_0_01,
+                               chains = 4,
+                               cores = 12,
+                               iter = 40000,
+                               warmup = 8000,
+                               control = list(adapt_delta = .95),
+                               save_pars = save_pars(all = TRUE)
+)
+```
+
+Download link for `fit_interest_prior_0_01`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9YR37krhRDvYPaNhg?e=c6wSLq> (3.8 GiB)  
+&nbsp;
+
+Next, we can compute marginal likelihoods. This is a little time-consuming (but not quite as bad as model fitting). So I have done that in advance as well. Download links are provided for each marginal-likelihood object (stored as .RData files). The code blocks below where the bridge-sampling happens are set to `eval=FALSE` here.
+
+```{r eval=FALSE}
+# null model (constrains VR:POL parameter to zero)
+load("fit_null.RData") # to load in downloaded file
+set.seed(1)
+margLogLik_null <- bridge_sampler(fit_null, maxiter=10000)
+rm(fit_null)
+```
+
+Download link for `margLogLik_null`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9Ya_1SCv-XeSNoShA?e=ungExU> (4.9 MiB)  
+&nbsp;
+```{r eval=FALSE}
+# model with prior N(0, 1) on VR:POL parameter
+load("fit_interest_prior_1.RData") # to load in downloaded file
+set.seed(1)
+margLogLik_interest_prior_1 <- bridge_sampler(fit_interest_prior_1, maxiter=10000)
+rm(fit_interest_prior_1)
+```
+
+Download link for `margLogLik_interest_prior_1`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9YYASBtuzqJMIhsng?e=zRX8h7> (5.6 MiB)  
+&nbsp;
+
+```{r eval=FALSE}
+# model with prior N(0, 0.5) on VR:POL parameter
+load("fit_interest_prior_0_5.RData") # to load in downloaded file
+set.seed(1)
+margLogLik_interest_prior_0_5 <- bridge_sampler(fit_interest_prior_0_5, maxiter=10000)
+rm(fit_interest_prior_0_5)
+```
+
+Download link for `margLogLik_interest_prior_0_5`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9Yey12ZOVnjNVxP4Q?e=iHBOb8> (5.7 MiB)  
+&nbsp;
+
+```{r eval=FALSE}
+# model with prior N(0, 0.2) on VR:POL parameter
+load("fit_interest_prior_0_2.RData") # to load in downloaded file
+set.seed(1)
+margLogLik_interest_prior_0_2 <- bridge_sampler(fit_interest_prior_0_2, maxiter=10000)
+rm(fit_interest_prior_0_2)
+```
+
+Download link for `margLogLik_interest_prior_0_2`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9YdpMVpLFz0_Aw-qA?e=jDDvFh> (5.5 MiB)  
+&nbsp;
+
+```{r eval=FALSE}
+# model with prior N(0, 0.1) on VR:POL parameter
+load("fit_interest_prior_0_1.RData") # to load in downloaded file
+set.seed(1)
+margLogLik_interest_prior_0_1 <- bridge_sampler(fit_interest_prior_0_1, maxiter=10000)
+rm(fit_interest_prior_0_1)
+```
+
+Download link for `margLogLik_interest_prior_0_1`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9YXbgo3xb3q9YKQVw?e=BDqpOK> (4.4 MiB)  
+&nbsp;
+
+```{r eval=FALSE}
+# model with prior N(0, 0.05) on VR:POL parameter
+load("fit_interest_prior_0_05.RData") # to load in downloaded file
+set.seed(1)
+margLogLik_interest_prior_0_05 <- bridge_sampler(fit_interest_prior_0_05, maxiter=10000)
+rm(fit_interest_prior_0_05)
+```
+
+Download link for `margLogLik_interest_prior_0_05`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9YUMqrpeMfDth4otw?e=8VzKkB> (4.7 MiB)  
+&nbsp;
+
+```{r eval=FALSE}
+# model with prior N(0, 0.02) on VR:POL parameter
+load("fit_interest_prior_0_02.RData") # to load in downloaded file
+set.seed(1)
+margLogLik_interest_prior_0_02 <- bridge_sampler(fit_interest_prior_0_02, maxiter=10000)
+rm(fit_interest_prior_0_02)
+```
+
+Download link for `margLogLik_interest_prior_0_02`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9Ybvd8xI-3vKnVaEg?e=LE8bbs> (5.0 MiB)  
+&nbsp;
+
+```{r eval=FALSE}
+# model with prior N(0, 0.01) on VR:POL parameter
+load("fit_interest_prior_0_01.RData") # to load in downloaded file
+set.seed(1)
+margLogLik_interest_prior_0_01 <- bridge_sampler(fit_interest_prior_0_01, maxiter=10000)
+rm(fit_interest_prior_0_01)
+```
+
+Download link for `margLogLik_interest_prior_0_01`: <https://1drv.ms/u/s!AuRxgm6Ml5A4l9YZ66iQ0gBqPshwhA?e=Ye7ImF> (5.2 MiB)  
+&nbsp;
+
+Finally, we can calculate Bayes factors:
+
+```{r}
+load("margLogLik_null.RData") # to load in downloaded file
+```
+
+```{r}
+# BF10 for model with VR:POL prior N(0, 1) over null model
+load("margLogLik_interest_prior_1.RData") # to load in downloaded file
+BF_prior_1 <- bayes_factor(margLogLik_interest_prior_1, margLogLik_null)
+BF_prior_1$bf
+
+# BF10 for model with VR:POL prior N(0, 0.5) over null model
+load("margLogLik_interest_prior_0_5.RData") # to load in downloaded file
+BF_prior_0_5 <- bayes_factor(margLogLik_interest_prior_0_5, margLogLik_null)
+BF_prior_0_5$bf
+
+# BF10 for model with VR:POL prior N(0, 0.2) over null model
+load("margLogLik_interest_prior_0_2.RData") # to load in downloaded file
+BF_prior_0_2 <- bayes_factor(margLogLik_interest_prior_0_2, margLogLik_null)
+BF_prior_0_2$bf
+
+# BF10 for model with VR:POL prior N(0, 0.1) over null model
+load("margLogLik_interest_prior_0_1.RData") # to load in downloaded file
+BF_prior_0_1 <- bayes_factor(margLogLik_interest_prior_0_1, margLogLik_null)
+BF_prior_0_1$bf
+
+# BF10 for model with VR:POL prior N(0, 0.05) over null model
+load("margLogLik_interest_prior_0_05.RData") # to load in downloaded file
+BF_prior_0_05 <- bayes_factor(margLogLik_interest_prior_0_05, margLogLik_null)
+BF_prior_0_05$bf
+
+# BF10 for model with VR:POL prior N(0, 0.02) over null model
+load("margLogLik_interest_prior_0_02.RData") # to load in downloaded file
+BF_prior_0_02 <- bayes_factor(margLogLik_interest_prior_0_02, margLogLik_null)
+BF_prior_0_02$bf
+
+# BF10 for model with VR:POL prior N(0, 0.01) over null model
+load("margLogLik_interest_prior_0_01.RData") # to load in downloaded file
+BF_prior_0_01 <- bayes_factor(margLogLik_interest_prior_0_01, margLogLik_null)
+BF_prior_0_01$bf
+```
+
+As we can see, the $BF_{10}$ ends up being $> 10$ in two cases, seemingly indicating strong evidence for the alternative:
+
+- $BF_{10} = 18.8$, in case of model with prior N(0, 0.1),
+- $BF_{10} = 12.2$, in case of model with prior N(0, 0.05).
+
+But---here comes the bizarre thing---in both of these fitted models, the 95% CrI of VR:POL comfortably includes zero:
+
+```{r}
+# population-level effects for model with prior N(0, 0.1) where e had BF10 = 12.2
+load("fit_interest_prior_0_1.RData") # to load in downloaded file
+fixef(fit_interest_prior_0_1)
+
+# population-level effects for model with prior N(0, 0.05) where e had BF10 = 18.8
+load("fit_interest_prior_0_05.RData") # to load in downloaded file
+fixef(fit_interest_prior_0_05)
+```
+
+Lastly, for a complete picture, we can plot the prior and posterior distributions for the case with prior N(0, 0.05), i.e., with Bayes factor 12.2:
+
+```{r}
+set.seed(2)
+posterior_samples <- as_draws_df(fit_interest_prior_0_05)
+prior_samples <- data.frame(b = rnorm(n = nrow(posterior_samples), mean = 0, sd = 0.05))
+colnames(prior_samples) <- "b_VR:POL"
+combined_samples <- rbind(
+  data.frame(Value = prior_samples$`b_VR:POL`, Distribution = "Prior"),
+  data.frame(Value = posterior_samples$`b_VR:POL`, Distribution = "Posterior")
+)
+ggplot(combined_samples, aes(x = Value, fill = Distribution)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Prior N(0, 0.05) and Posterior distribution of b_VR:POL, where BF10 = 12.2",
+       x = "b_VR:POL",
+       y = "Density") +
+  scale_fill_manual(values = c("red", "blue")) +
+  theme_minimal()
+```
