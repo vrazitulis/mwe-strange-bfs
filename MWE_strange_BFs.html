@@ -453,7 +453,7 @@ priors_null &lt;-  c(
 fit_null &lt;- brm(&#39;res_log_RT ~ VR + POL + (VR * POL | subject) + (VR * POL | item)&#39;,
                 data = critical_results_SPV,
                 family = gaussian(),
-                prior = fit_null,
+                prior = priors_null,
                 chains = 4,
                 cores = 12,
                 iter = 40000,
